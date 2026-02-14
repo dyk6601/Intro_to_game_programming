@@ -1,5 +1,5 @@
 ---
 triple:          'arm64-apple-darwin'
-binary-path:     '/Users/derek/Desktop/Intro_to_game_programming_hw/hw2/cs3113'
+binary-path:     cs3113
 relocations:     []
 ...

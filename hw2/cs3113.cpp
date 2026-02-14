@@ -1,7 +1,7 @@
 #include "cs3113.h"
 #include <cmath>
 
-// Global Constants
+//Global Constants
 const int SCREEN_WIDTH  = 1280;
 const int SCREEN_HEIGHT = 720;
 const int FPS           = 60;
@@ -12,30 +12,30 @@ const char GROUND_FILEPATH[] = "assets/ground.png";
 const char MARIO_FILEPATH[]  = "assets/mario.png";
 const char LUCARIO_FILEPATH[] = "assets/lucario.png";
 
-// Day/Night cycle 
+//Day/Night cycle 
 const float DAY_NIGHT_ORBIT_RADIUS = 400.0f;
 const float DAY_NIGHT_ORBIT_SPEED = 0.3f;
 const Color DAY_SKY = { 135, 206, 235, 255 };
 const Color NIGHT_SKY = { 10, 14, 39, 255 };
 
-// Sun 
+//Sun 
 const Vector2 SUN_BASE_SIZE = { 200.0f, 200.0f };
 const float SUN_ROTATION_SPEED = 30.0f;
 
-// Moon 
+//Moon 
 const Vector2 MOON_BASE_SIZE = { 180.0f, 180.0f };
 const float MOON_ROTATION_SPEED = 25.0f;
 
-// Ground 
+//Ground 
 const float GROUND_BASE_Y = SCREEN_HEIGHT - 50.0f;
 const float GROUND_BOB_SPEED = 3.5f;
 const float GROUND_BOB_AMPLITUDE = 40.0f;
 
-// Mario 
+//Mario 
 const Vector2 MARIO_BASE_SIZE = { 100.0f, 100.0f };
 const float MARIO_PULSE_AMPLITUDE = 80.0f;  
 
-// Lucario
+//Lucario
 const Vector2 LUCARIO_SIZE = { 140.0f, 140.0f };
 const float LUCARIO_SPEED = 900.0f;     
 const float LUCARIO_SPIN_SPEED = 360.0f; 
@@ -77,7 +77,7 @@ Vector2 gLucarioPosition = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
 Vector2 gLucarioVelocity = { LUCARIO_SPEED, LUCARIO_SPEED };
 float gLucarioRotation = 0.0f;
 
-// Delta time
+//Delta time
 float gPreviousTicks = 0.0f;
 
 void initialise()
@@ -100,12 +100,12 @@ void processInput()
 
 void update() 
 {
-    // Calculate delta time
+    //Calculate delta time
     float ticks = (float)GetTime();
     float deltaTime = ticks - gPreviousTicks;
     gPreviousTicks = ticks;
     
-    // Day/night 
+    //Day/night 
     gDayNightAngle += DAY_NIGHT_ORBIT_SPEED * deltaTime;
     
     gSunPosition = {
@@ -113,7 +113,7 @@ void update()
         gOrbitCenter.y + DAY_NIGHT_ORBIT_RADIUS * sin(gDayNightAngle - PI/2)
     };
     
-    // Moon opposite sun
+    //Moon opposite sun
     gMoonPosition = {
         gOrbitCenter.x + DAY_NIGHT_ORBIT_RADIUS * cos(gDayNightAngle + PI/2),
         gOrbitCenter.y + DAY_NIGHT_ORBIT_RADIUS * sin(gDayNightAngle + PI/2)
@@ -122,19 +122,19 @@ void update()
     gSunRotation += SUN_ROTATION_SPEED * deltaTime;
     gMoonRotation += MOON_ROTATION_SPEED * deltaTime;
     
-    // Ground
+    //Ground
     gGroundBobTime += GROUND_BOB_SPEED * deltaTime;
     float groundWave = sin(gGroundBobTime);
     gGroundY = GROUND_BASE_Y + GROUND_BOB_AMPLITUDE * groundWave;
         gGroundRotation = 0.0f;
     
-    // Mario pulse (synced with ground bob)
+    //Mario pulse (synced with ground bob)
     float marioPulseOffset = MARIO_PULSE_AMPLITUDE * sin(gGroundBobTime);
     float scaledSize = MARIO_BASE_SIZE.x + marioPulseOffset;
     if (scaledSize < 20.0f) scaledSize = 20.0f;
     gMarioScale = { scaledSize, scaledSize };
 
-    // Lucario fast bounce (translation + rotation using deltaTime)
+    //Lucario fast bounce (translation + rotation using deltaTime)
     gLucarioRotation += LUCARIO_SPIN_SPEED * deltaTime;
     gLucarioPosition.x += gLucarioVelocity.x * deltaTime;
     gLucarioPosition.y += gLucarioVelocity.y * deltaTime;
@@ -142,7 +142,7 @@ void update()
     float halfW = LUCARIO_SIZE.x / 2.0f + LUCARIO_EDGE_PADDING;
     float halfH = LUCARIO_SIZE.y / 2.0f + LUCARIO_EDGE_PADDING;
 
-    // Simple edge bounce to keep him on-screen
+    //Simple edge bounce to keep him on-screen
     if (gLucarioPosition.x < halfW) {
         gLucarioPosition.x = halfW;
         gLucarioVelocity.x = fabsf(gLucarioVelocity.x);
@@ -166,7 +166,7 @@ void render()
 {
     BeginDrawing();
     
-    // Sky color based on sun height
+    //Sky color based on sun height
     float sunHeight = (gOrbitCenter.y - gSunPosition.y) / DAY_NIGHT_ORBIT_RADIUS;
     float dayAmount = (sunHeight + 1.0f) / 2.0f;  
     
@@ -179,7 +179,7 @@ void render()
     
     ClearBackground(skyColor);
     
-    // Sun
+    //Sun
     Rectangle sunTextureArea = {
         0.0f, 0.0f,
         (float)gSunTexture.width,
@@ -207,7 +207,7 @@ void render()
         WHITE
     );
     
-    // Moon
+    //Moon
     Rectangle moonTextureArea = {
         0.0f, 0.0f,
         (float)gMoonTexture.width,
@@ -235,7 +235,7 @@ void render()
         WHITE
     );
     
-    // Mario
+    //Mario
     Rectangle marioTextureArea = {
         0.0f, 0.0f,
         (float)gMarioTexture.width,
@@ -263,7 +263,7 @@ void render()
         WHITE
     );
 
-    // Lucario
+    //Lucario
     Rectangle lucarioTextureArea = {
         0.0f, 0.0f,
         (float)gLucarioTexture.width,
