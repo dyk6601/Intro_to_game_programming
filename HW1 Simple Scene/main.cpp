@@ -1,6 +1,24 @@
 #include "cs3113.h"
 #include <cmath>
 
+/**
+
+* Author: [Derek Kim]
+
+* Assignment: Simple Scene
+
+* Date due: [02/13/2026]
+
+* I pledge that I have completed this assignment without
+
+* collaborating with anyone else, in conformance with the
+
+* NYU School of Engineering Policies and Procedures on
+
+* Academic Misconduct.
+
+**/
+
 //Global Constants
 const int SCREEN_WIDTH  = 1280;
 const int SCREEN_HEIGHT = 720;
