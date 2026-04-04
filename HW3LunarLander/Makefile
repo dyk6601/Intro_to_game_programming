@@ -3,21 +3,17 @@ CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -O2 -I/opt/homebrew/include
 LDFLAGS  ?= -L/opt/homebrew/lib -lraylib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 
 SRCS = main.cpp
-OBJS = $(SRCS:.cpp=.o)
 BIN  = lunar_lander
 
 all: $(BIN)
 
-$(BIN): $(OBJS)
+$(BIN): $(SRCS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
-
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 run: $(BIN)
 	./$(BIN)
 
 clean:
-	rm -f $(OBJS) $(BIN)
+	rm -f $(BIN)
 
 .PHONY: all clean run

@@ -23,7 +23,7 @@ constexpr float MAX_FUEL   = 100.0f;
 constexpr float FUEL_BURN  = 14.0f;    
 
 constexpr float ARMY_W     = 50.0f;   
-constexpr float ARMY_H     = 60.0f;   
+constexpr float ARMY_H     = 60.0f;    
 
 constexpr float BALL_SZ    = 64.0f;   
 
@@ -105,8 +105,6 @@ static bool UpperHalfCircleHit(const Entity& ball) {
     // fy < cy  →  bottom is in the top half (screen +Y is DOWN)
     return (dx * dx + dy * dy <= r * r) && (fy < cy);
 }
-
-
 
 static void BuildLevel() {
     g_entities.clear();
