@@ -1,434 +1,294 @@
 /**
 * Author: Derek Kim
 * Assignment: Lunar Lander
-* Date due: March 14, 2026
+* Date due: 04/20/2026
 * I pledge that I have completed this assignment without
 * collaborating with anyone else, in conformance with the
 * NYU School of Engineering Policies and Procedures on
 * Academic Misconduct.
 **/
 
-#include "raylib.h"
-#include <cmath>
-#include <vector>
+#include "CS3113/Entity.h"
 
+constexpr int SCREEN_WIDTH  = 1000,
+              SCREEN_HEIGHT = 600,
+              FPS           = 120;
 
-constexpr int   SCREEN_W   = 800;
-constexpr int   SCREEN_H   = 600;
+constexpr float GRAVITY        = 120.0f,
+                THRUST         = 300.0f,
+                DRAG           = 2.0f,
+                DRAG_Y_FACTOR  = 0.3f,
+                FIXED_TIMESTEP = 1.0f / 60.0f;
 
-constexpr float GRAVITY    = 150.0f;   
-constexpr float THRUST     = 300.0f;   
+constexpr float MAX_FUEL          = 100.0f,
+                FUEL_CONSUMPTION  = 20.0f;
 
-constexpr float MAX_FUEL   = 100.0f;
-constexpr float FUEL_BURN  = 14.0f;    
+constexpr float PLATFORM_SIZE = 90.0f,
+                GROUND_Y      = 550.0f,
+                BALL_RADIUS   = PLATFORM_SIZE * 0.47f,
+                BUZZ_TILT_DEG = -25.0f;
 
-constexpr float ARMY_W     = 50.0f;   
-constexpr float ARMY_H     = 60.0f;    
+constexpr int NUM_SAFE_PLATFORMS = 2,
+              NUM_DANGER_GROUND  = 11,
+              NUM_GROUND         = NUM_SAFE_PLATFORMS + NUM_DANGER_GROUND,
+              MOVING_IDX         = NUM_GROUND,
+              NUM_PLATFORMS       = NUM_GROUND + 1,
+              NUM_OBJ          = 2,
+              NUM_ENTITIES       = NUM_PLATFORMS + NUM_OBJ;
 
-constexpr float BALL_SZ    = 64.0f;   
+// ——— Game state ———
+enum GameState { PLAYING, WON, LOST };
 
-constexpr float BUZZ_W     = 48.0f;    
-constexpr float BUZZ_H     = 58.0f;   
+AppStatus  gAppStatus       = RUNNING;
+GameState  gGameState       = PLAYING;
+float      gPreviousTicks   = 0.0f,
+           gTimeAccumulator = 0.0f,
+           gFuel            = MAX_FUEL,
+           gMovingTime      = 0.0f;
+bool       gThrusting       = false;
 
-constexpr float ARMY_HIT_INSET_X   = 13.0f;  // shrink side
-constexpr float ARMY_HIT_INSET_TOP =  8.0f;  // shrink top 
+Entity    *gPlayer   = nullptr;
+Entity    *gEntities = nullptr;   // all collidable entities in one array
+Texture2D  gBackground;
 
-enum GameState { STATE_MENU, STATE_PLAYING, STATE_WON, STATE_LOST };
+void initialise();
+void processInput();
+void update();
+void render();
+void shutdown();
 
-struct Entity {
-    Vector2 pos;            
-    Vector2 size;
-    bool    winZone;       
-    bool    moving;
-    float   speed;
-    float   lo, hi;         
-    int     dir;            
-};
+void initialise()
+{
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Toy Story Lunar Lander");
 
-static GameState           g_state = STATE_MENU;
+    gBackground = LoadTexture("assets/toystory.jpg");
 
-static Texture2D           g_texBg;
-static Texture2D           g_texBuzz;
-static Texture2D           g_texBall;
-static Texture2D           g_texArmy;
+    // ——— Buzz Lightyear ———
+    gPlayer = new Entity(
+        {SCREEN_WIDTH / 2.0f, 80.0f},
+        {80.0f, 96.0f},
+        "assets/buzz.png",
+        PLAYER
+    );
+    gPlayer->setAcceleration({0.0f, GRAVITY});
+    gPlayer->setColliderDimensions({50.0f, 60.0f});
+    gPlayer->setAngle(BUZZ_TILT_DEG);
 
-// Player
-static Vector2             g_position;
-static Vector2             g_velocity;
-static Vector2             g_acceleration;
-static float               g_fuel;
+    // ——— All collidable entities in one array ———
+    gEntities = new Entity[NUM_ENTITIES];
 
-static double              g_prevTime;
+    //safe landing ball (WINNING_PLATFORM) — on the ground
+    float safeX[] = {280.0f, 720.0f};
+    for (int i = 0; i < NUM_SAFE_PLATFORMS; i++)
+    {
+        gEntities[i].setTexture("assets/Pixar_Ball.png");
+        gEntities[i].setEntityType(WINNING_PLATFORM);
+        gEntities[i].setScale({PLATFORM_SIZE, PLATFORM_SIZE});
+        gEntities[i].setColliderType(CIRCLE);
+        gEntities[i].setColliderRadius(BALL_RADIUS);
+        gEntities[i].setColliderOffset({0.0f, 0.0f});
+        gEntities[i].setPosition({safeX[i], GROUND_Y});
+    }
 
-static std::vector<Entity> g_entities;
+    //danger ground tiles (BLOCK) — spread out with gaps near the safe pads
+    float dangerX[] = {5.0f, 95.0f, 185.0f, 365.0f, 455.0f,
+                       545.0f, 635.0f, 815.0f, 905.0f, 995.0f, 1085.0f};
+    for (int i = 0; i < NUM_DANGER_GROUND; i++)
+    {
+        int idx = NUM_SAFE_PLATFORMS + i;
+        gEntities[idx].setTexture("assets/Greenarmy.png");
+        gEntities[idx].setEntityType(BLOCK);
+        gEntities[idx].setScale({PLATFORM_SIZE, PLATFORM_SIZE});
+        gEntities[idx].setColliderDimensions({60.0f, 60.0f});
+        gEntities[idx].setColliderOffset({0.0f, 22.0f});
+        gEntities[idx].setPosition({dangerX[i], GROUND_Y});
+    }
 
-static bool g_wantStart   = false;
-static bool g_wantRestart = false;
+    //moving safe platform (WINNING_PLATFORM)
+    gEntities[MOVING_IDX].setTexture("assets/Pixar_Ball.png");
+    gEntities[MOVING_IDX].setEntityType(WINNING_PLATFORM);
+    gEntities[MOVING_IDX].setScale({PLATFORM_SIZE, PLATFORM_SIZE});
+    gEntities[MOVING_IDX].setColliderType(CIRCLE);
+    gEntities[MOVING_IDX].setColliderRadius(BALL_RADIUS);
+    gEntities[MOVING_IDX].setColliderOffset({0.0f, 0.0f});
+    gEntities[MOVING_IDX].setPosition({500.0f, 350.0f});
 
-
-static float Len(Vector2 v) { return sqrtf(v.x * v.x + v.y * v.y); }
-
-static Rectangle PlayerRect() {
-    return { g_position.x - BUZZ_W * 0.5f,
-             g_position.y - BUZZ_H * 0.5f,
-             BUZZ_W, BUZZ_H };
-}
-
-static Rectangle EntRect(const Entity& e) {
-    return { e.pos.x, e.pos.y, e.size.x, e.size.y };
-}
-
-// Inset collision rect for green-army tiles so the hitbox matches the
-static Rectangle ArmyHitRect(const Entity& e) {
-    return {
-        e.pos.x + ARMY_HIT_INSET_X,
-        e.pos.y + ARMY_HIT_INSET_TOP,
-        e.size.x - ARMY_HIT_INSET_X * 2.0f,
-        e.size.y - ARMY_HIT_INSET_TOP * 2.0f
+    //floating  obstacles (BLOCK) — appended after platforms
+    const char *objFiles[] = {
+        "assets/Greenarmy.png",
+        "assets/Greenarmy.png"
     };
-}
-
-static bool AABBOverlap(Rectangle a, Rectangle b) {
-    return a.x < b.x + b.width  && a.x + a.width  > b.x &&
-           a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
-static bool UpperHalfCircleHit(const Entity& ball) {
-    float cx = ball.pos.x + ball.size.x * 0.5f;  
-    float cy = ball.pos.y + ball.size.y * 0.5f;   
-    float r  = ball.size.x * 0.55f;              
-
-    float fx = g_position.x;
-    float fy = g_position.y + BUZZ_H * 0.50f;     
-    float dx = fx - cx;
-    float dy = fy - cy;
-    // fy < cy  →  bottom is in the top half (screen +Y is DOWN)
-    return (dx * dx + dy * dy <= r * r) && (fy < cy);
-}
-
-static void BuildLevel() {
-    g_entities.clear();
-
-    float floorY = (float)SCREEN_H - ARMY_H;
-    int   cols   = (int)ceilf((float)SCREEN_W / ARMY_W);   
-
-    //landing-zone gaps 
-    const int gapA = 3;   
-    const int gapB = 11;
-
-    // Floor
-    for (int c = 0; c < cols; ++c) {
-        bool inGap = (c == gapA || c == gapA + 1 ||
-                      c == gapB || c == gapB + 1);
-        if (inGap) continue;                      
-
-        g_entities.push_back({
-            { c * ARMY_W, floorY }, { ARMY_W, ARMY_H },
-            false, false, 0, 0, 0, 1
-        });
-    }
-
-    // Pixar Ball
-    auto addBall = [&](int gapStart) {
-        float bx = gapStart * ARMY_W + (2.0f * ARMY_W - BALL_SZ) * 0.5f;
-        float by = floorY + (ARMY_H - BALL_SZ);
-        g_entities.push_back({
-            { bx, by }, { BALL_SZ, BALL_SZ },
-            true, false, 0, 0, 0, 1
-        });
+    Vector2 objPos[] = {
+        {280.0f, 280.0f}, {650.0f, 220.0f}
     };
-    addBall(gapA);
-    addBall(gapB);
 
-    // Floating army
-    for (int i = 0; i < 3; ++i)
-        g_entities.push_back({
-            { 170.0f + i * ARMY_W, 420.0f }, { ARMY_W, ARMY_H },
-            false, false, 0, 0, 0, 1
+    for (int i = 0; i < NUM_OBJ; i++)
+    {
+        int idx = NUM_PLATFORMS + i;
+        gEntities[idx].setTexture(objFiles[i]);
+        gEntities[idx].setEntityType(BLOCK);
+        gEntities[idx].setScale({70.0f, 70.0f});
+        gEntities[idx].setColliderDimensions({60.0f, 60.0f});
+        gEntities[idx].setPosition(objPos[i]);
+    }
+
+    SetTargetFPS(FPS);
+}
+
+void processInput()
+{
+    if (IsKeyPressed(KEY_Q) || WindowShouldClose())
+    {
+        gAppStatus = TERMINATED;
+        return;
+    }
+
+    if (gGameState != PLAYING) return;
+
+    gThrusting = false;
+
+    Vector2 vel = gPlayer->getVelocity();
+
+    //drag opposes current velocity; gravity always pulls down
+    float accX = -vel.x * DRAG;
+    float accY = GRAVITY - vel.y * DRAG * DRAG_Y_FACTOR;
+
+    if (gFuel > 0.0f)
+    {
+        if (IsKeyDown(KEY_LEFT))
+            { accX -= THRUST; gThrusting = true; }
+
+        if (IsKeyDown(KEY_RIGHT))
+            { accX += THRUST; gThrusting = true; }
+
+        if (IsKeyDown(KEY_UP))
+            { accY -= THRUST; gThrusting = true; }
+    }
+
+    gPlayer->setAcceleration({accX, accY});
+}
+
+void update()
+{
+    float ticks     = (float)GetTime();
+    float deltaTime = ticks - gPreviousTicks;
+    gPreviousTicks  = ticks;
+
+    deltaTime += gTimeAccumulator;
+
+    if (deltaTime < FIXED_TIMESTEP)
+    {
+        gTimeAccumulator = deltaTime;
+        return;
+    }
+
+    while (deltaTime >= FIXED_TIMESTEP)
+    {
+        if (gGameState != PLAYING)
+        {
+            deltaTime -= FIXED_TIMESTEP;
+            continue;
+        }
+
+        //consume fuel while thrusting
+        if (gThrusting)
+        {
+            gFuel -= FUEL_CONSUMPTION * FIXED_TIMESTEP;
+            if (gFuel < 0.0f) gFuel = 0.0f;
+        }
+
+        //animate moving platform (sine wave left-right)
+        gMovingTime += FIXED_TIMESTEP;
+        gEntities[MOVING_IDX].setPosition({
+            500.0f + sinf(gMovingTime * 1.0f) * 200.0f,
+            350.0f
         });
 
-    for (int i = 0; i < 2; ++i)
-        g_entities.push_back({
-            { 520.0f + i * ARMY_W, 350.0f }, { ARMY_W, ARMY_H },
-            false, false, 0, 0, 0, 1
-        });
+        //physics update
+        gPlayer->update(FIXED_TIMESTEP, gEntities, NUM_ENTITIES);
 
-    g_entities.push_back({
-        { 60.0f, 300.0f }, { ARMY_W, ARMY_H },
-        false, false, 0, 0, 0, 1
-    });
+        //check win / lose using collision info captured during physics resolution
+        if (gPlayer->hasTouchedBlock())
+            gGameState = LOST;
+        else if (gPlayer->hasTouchedWinningPlatform() && gPlayer->isCollidingBottom())
+            gGameState = WON;
 
-    // Moving green-army 
-    g_entities.push_back({
-        { 100.0f, 260.0f }, { ARMY_W, ARMY_H },
-        false, true, 130.0f, 50.0f, 560.0f, 1
-    });
-    g_entities.push_back({
-        { 600.0f, 160.0f }, { ARMY_W, ARMY_H },
-        false, true, 100.0f, 180.0f, 700.0f, -1
-    });
+        //out of bounds
+        Vector2 pos = gPlayer->getPosition();
+        if (pos.y > SCREEN_HEIGHT + 50 ||
+            pos.x < -50 || pos.x > SCREEN_WIDTH + 50)
+            gGameState = LOST;
+
+        deltaTime -= FIXED_TIMESTEP;
+    }
+
+    gTimeAccumulator = deltaTime;
 }
 
-
-static void ResetPlayer() {
-    g_position     = { SCREEN_W * 0.5f, 60.0f };
-    g_velocity     = { 0.0f, 0.0f };
-    g_acceleration = { 0.0f, 0.0f };
-    g_fuel         = MAX_FUEL;
-    (void)0; 
-}
-
-static void Initialise() {
-    InitWindow(SCREEN_W, SCREEN_H, "Toy Story - Lunar Lander");
-    SetTargetFPS(60);
-
-    g_texBg   = LoadTexture("assets/toystory.jpg");
-    g_texBuzz = LoadTexture("assets/buzz.png");
-    g_texBall = LoadTexture("assets/Pixar_Ball.png");
-    g_texArmy = LoadTexture("assets/Greenarmy.png");
-
-    BuildLevel();
-    ResetPlayer();
-
-    g_prevTime = GetTime();
-    g_state    = STATE_MENU;
-}
-
-static void ProcessInput(float dt) {
-    //  Menu
-    if (g_state == STATE_MENU && IsKeyPressed(KEY_ENTER)) {
-        g_wantStart = true;
-        return;
-    }
-    if ((g_state == STATE_WON || g_state == STATE_LOST) &&
-        IsKeyPressed(KEY_R)) {
-        g_wantRestart = true;
-        return;
-    }
-    if (g_state != STATE_PLAYING) return;
-
-    g_acceleration = { 0.0f, 0.0f };
-
-    bool thrusting = false;
-
-    if (g_fuel > 0.0f) {
-        if (IsKeyDown(KEY_UP)    || IsKeyDown(KEY_W)) {
-            g_acceleration.y -= THRUST;
-            thrusting = true;
-        }
-        if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A)) {
-            g_acceleration.x -= THRUST;
-            thrusting = true;
-        }
-        if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) {
-            g_acceleration.x += THRUST;
-            thrusting = true;
-        }
-
-        float len = Len(g_acceleration);
-        if (len > THRUST) {
-            g_acceleration.x *= THRUST / len;
-            g_acceleration.y *= THRUST / len;
-        }
-
-        // Burn fuel
-        if (thrusting) {
-            g_fuel -= FUEL_BURN * dt;
-            if (g_fuel < 0.0f) g_fuel = 0.0f;
-        }
-    }
-}
-
-
-static void Update(float dt) {
-    //  State Transitions
-    if (g_state == STATE_MENU && g_wantStart) {
-        g_state     = STATE_PLAYING;
-        g_wantStart = false;
-        return;
-    }
-    if ((g_state == STATE_WON || g_state == STATE_LOST) && g_wantRestart) {
-        ResetPlayer();
-        // Reset moving platforms 
-        for (auto& e : g_entities) {
-            if (e.moving) e.pos.x = e.lo;
-        }
-        g_state       = STATE_PLAYING;
-        g_wantRestart = false;
-        return;
-    }
-    if (g_state != STATE_PLAYING) return;
-
-    //gravity
-    g_acceleration.y += GRAVITY;
-
-    //Velocity
-    g_velocity.x += g_acceleration.x * dt;
-    g_velocity.y += g_acceleration.y * dt;
-
-    g_position.x += g_velocity.x * dt;
-    g_position.y += g_velocity.y * dt;
-
-    //  Screen-edge clamp 
-    float hw = BUZZ_W * 0.5f, hh = BUZZ_H * 0.5f;
-    if (g_position.x < hw)              { g_position.x = hw;              g_velocity.x = 0; }
-    if (g_position.x > SCREEN_W - hw)   { g_position.x = SCREEN_W - hw;  g_velocity.x = 0; }
-    if (g_position.y < hh)              { g_position.y = hh;              g_velocity.y = 0; }
-
-    // Move platforms 
-    for (auto& e : g_entities) {
-        if (!e.moving) continue;
-        e.pos.x += e.speed * (float)e.dir * dt;
-        if (e.pos.x <= e.lo) { e.pos.x = e.lo; e.dir =  1; }
-        if (e.pos.x >= e.hi) { e.pos.x = e.hi; e.dir = -1; }
-    }
-
-    // Collision detection
-    Rectangle pr = PlayerRect();
-
-    for (const auto& e : g_entities) {
-        Rectangle er = e.winZone ? EntRect(e) : ArmyHitRect(e);
-        if (!AABBOverlap(pr, er)) continue;
-
-        if (e.winZone) {
-            // Pixar Ball
-            if (UpperHalfCircleHit(e)) {
-                g_state = STATE_WON;
-                return;
-            }
-
-            float oTop = (pr.y + pr.height) - er.y;
-            float oBot = (er.y + er.height) - pr.y;
-            if (oTop < oBot) {
-                g_position.y -= oTop;
-                if (g_velocity.y > 0) g_velocity.y = 0;
-            } else {
-                g_position.y += oBot;
-                if (g_velocity.y < 0) g_velocity.y = 0;
-            }
-            pr = PlayerRect();
-            if (AABBOverlap(pr, er)) {
-                float oL = (pr.x + pr.width)  - er.x;
-                float oR = (er.x + er.width)  - pr.x;
-                if (oL < oR) {
-                    g_position.x -= oL;
-                    if (g_velocity.x > 0) g_velocity.x = 0;
-                } else {
-                    g_position.x += oR;
-                    if (g_velocity.x < 0) g_velocity.x = 0;
-                }
-                pr = PlayerRect();
-            }
-        } else {
-            // Green Army
-            g_state = STATE_LOST;
-            return;
-        }
-    }
-
-    // Floor
-    if (g_position.y > SCREEN_H + BUZZ_H) {
-        g_state = STATE_LOST;
-    }
-}
-
-static void Render() {
+void render()
+{
     BeginDrawing();
-    ClearBackground(BLACK);
+    ClearBackground(ColorFromHex("#0e2a47"));
 
-    // Background 
-    DrawTexturePro(g_texBg,
-        { 0, 0, (float)g_texBg.width, (float)g_texBg.height },
-        { 0, 0, (float)SCREEN_W, (float)SCREEN_H },
-        { 0, 0 }, 0.0f, WHITE);
+    // Background image stretched to fill window
+    DrawTexturePro(
+        gBackground,
+        {0, 0, (float)gBackground.width, (float)gBackground.height},
+        {0, 0, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT},
+        {0, 0}, 0.0f, WHITE
+    );
 
-    //  Entities 
-    for (const auto& e : g_entities) {
-        const Texture2D& tex = e.winZone ? g_texBall : g_texArmy;
-        DrawTexturePro(tex,
-            { 0, 0, (float)tex.width, (float)tex.height },
-            { e.pos.x, e.pos.y, e.size.x, e.size.y },
-            { 0, 0 }, 0.0f, WHITE);
+    for (int i = 0; i < NUM_ENTITIES; i++) gEntities[i].render();
+    gPlayer->render();
+
+    //  Fuel bar
+    constexpr int BAR_W = 200, BAR_H = 20, BAR_X = 20, BAR_Y = 40;
+    float ratio = gFuel / MAX_FUEL;
+    Color fuelColor = ratio > 0.5f ? GREEN : (ratio > 0.25f ? YELLOW : RED);
+
+    DrawText("FUEL", BAR_X, BAR_Y - 22, 20, WHITE);
+    DrawRectangle(BAR_X, BAR_Y, BAR_W, BAR_H, DARKGRAY);
+    DrawRectangle(BAR_X, BAR_Y, (int)(BAR_W * ratio), BAR_H, fuelColor);
+    DrawRectangleLines(BAR_X, BAR_Y, BAR_W, BAR_H, WHITE);
+
+    //  End-game 
+    if (gGameState == WON)
+    {
+        const char *msg = "Nicely Done!";
+        int w = MeasureText(msg, 40);
+        DrawText(msg, SCREEN_WIDTH / 2 - w / 2, SCREEN_HEIGHT / 2 - 20, 40, GREEN);
     }
-
-    //  Buzz
-    DrawTexturePro(g_texBuzz,
-        { 0, 0, (float)g_texBuzz.width, (float)g_texBuzz.height },
-        { g_position.x, g_position.y, BUZZ_W, BUZZ_H },
-        { BUZZ_W * 0.5f, BUZZ_H * 0.5f }, 0.0f, WHITE);
-
-    // Fuel bar 
-    if (g_state == STATE_PLAYING) {
-        float pct = g_fuel / MAX_FUEL;
-        DrawRectangle(10, 10, 204, 24, Color{ 40, 40, 40, 200 });
-        Color barCol = (pct > 0.3f) ? Color{ 34, 177, 76, 255 }
-                                     : Color{ 230, 30, 30, 255 };
-        DrawRectangle(12, 12, (int)(200.0f * pct), 20, barCol);
-        DrawRectangleLines(10, 10, 204, 24, WHITE);
-        DrawText("FUEL", 220, 13, 20, WHITE);
-    }
-
-    // overlays 
-    auto Cx = [](const char* txt, int sz) {
-        return (SCREEN_W - MeasureText(txt, sz)) / 2;
-    };
-
-    switch (g_state) {
-    case STATE_MENU: {
-        const char* t1 = "TOY STORY: LUNAR LANDER";
-        const char* t2 = "Press ENTER to Play";
-        const char* t3 = "Arrow Keys / WASD to move";
-        const char* t4 = "Land on the Pixar Ball!";
-        DrawText(t1, Cx(t1, 30), SCREEN_H / 2 - 70, 30, YELLOW);
-        DrawText(t2, Cx(t2, 22), SCREEN_H / 2 - 10, 22, WHITE);
-        DrawText(t3, Cx(t3, 16), SCREEN_H / 2 + 25, 16, LIGHTGRAY);
-        DrawText(t4, Cx(t4, 18), SCREEN_H / 2 + 50, 18, GOLD);
-        break;
-    }
-    case STATE_WON: {
-        DrawRectangle(0, 0, SCREEN_W, SCREEN_H, Color{ 0, 0, 0, 160 });
-        const char* w1 = "MISSION COMPLETED!";
-        const char* w2 = "Press R to Restart";
-        DrawText(w1, Cx(w1, 44), SCREEN_H / 2 - 40, 44, GOLD);
-        DrawText(w2, Cx(w2, 22), SCREEN_H / 2 + 20, 22, WHITE);
-        break;
-    }
-    case STATE_LOST: {
-        DrawRectangle(0, 0, SCREEN_W, SCREEN_H, Color{ 0, 0, 0, 160 });
-        const char* l1 = "MISSION FAILED!";
-        const char* l2 = "Press R to Restart";
-        DrawText(l1, Cx(l1, 44), SCREEN_H / 2 - 40, 44, RED);
-        DrawText(l2, Cx(l2, 22), SCREEN_H / 2 + 20, 22, WHITE);
-        break;
-    }
-    default: break;
+    else if (gGameState == LOST)
+    {
+        const char *msg = "You Failed!";
+        int w = MeasureText(msg, 40);
+        DrawText(msg, SCREEN_WIDTH / 2 - w / 2, SCREEN_HEIGHT / 2 - 20, 40, RED);
     }
 
     EndDrawing();
 }
 
-static void Shutdown() {
-    UnloadTexture(g_texBg);
-    UnloadTexture(g_texBuzz);
-    UnloadTexture(g_texBall);
-    UnloadTexture(g_texArmy);
+void shutdown()
+{
+    delete   gPlayer;
+    delete[] gEntities;
+
+    UnloadTexture(gBackground);
     CloseWindow();
 }
 
-int main() {
-    Initialise();
+int main(void)
+{
+    initialise();
 
-    while (!WindowShouldClose()) {
-        double now = GetTime();
-        float  dt  = (float)(now - g_prevTime);
-        g_prevTime = now;
-        if (dt > 0.05f) dt = 0.05f;   
-
-        ProcessInput(dt);
-        Update(dt);
-        Render();
+    while (gAppStatus == RUNNING)
+    {
+        processInput();
+        update();
+        render();
     }
 
-    Shutdown();
+    shutdown();
+
     return 0;
 }
